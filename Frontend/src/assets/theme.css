@@ -1,0 +1,81 @@
+/* ===========================================================
+   Global theme — permanent dark, "elegant mystic" mode
+   Used across the whole site, not just the gallery.
+   =========================================================== */
+
+:root {
+  /* Core palette */
+  --void: #0c0a10;         /* base background — deep aubergine-black */
+  --panel: #15121a;        /* raised surfaces */
+  --panel-soft: #1c1822;   /* hover / lighter surfaces */
+  --hairline: rgba(184, 148, 92, 0.18); /* faint brass rule */
+
+  --brass: #b8945c;        /* primary accent — antique brass */
+  --brass-bright: #d9b578; /* brass on hover / active */
+  --plum: #402849;         /* secondary accent, used sparingly */
+
+  --parchment: #ece4d6;    /* primary text — warm off-white */
+  --mist: #948c9c;         /* secondary text — muted lavender-grey */
+  --mist-dim: #635d6b;     /* tertiary / placeholder text */
+
+  --font-display: 'Cormorant Garamond', 'Georgia', serif;
+  --font-body: 'Jost', 'Segoe UI', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  background: var(--void);
+  color: var(--parchment);
+}
+
+body {
+  font-family: var(--font-body);
+  font-weight: 300;
+  letter-spacing: 0.01em;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(184, 148, 92, 0.06), transparent),
+    radial-gradient(ellipse 60% 40% at 90% 100%, rgba(64, 40, 73, 0.15), transparent);
+  background-attachment: fixed;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  color: var(--parchment);
+  margin: 0;
+}
+
+a {
+  color: var(--brass);
+}
+
+::selection {
+  background: var(--plum);
+  color: var(--parchment);
+}
+
+/* thin, warm scrollbar to match the mood */
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--void);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--panel-soft);
+  border-radius: 0;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--mist-dim);
+}
