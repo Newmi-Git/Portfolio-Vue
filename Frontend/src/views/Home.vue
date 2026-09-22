@@ -1,7 +1,6 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 
-// Set this to your photo (e.g. import pfp from '@/assets/pfp.jpg') to replace the placeholder
 const pfpSrc = ''
 
 const githubIcon =
@@ -17,12 +16,10 @@ const socials = [
   { label: 'LinkedIn', href: 'https://www.linkedin.com/in/yaghya-abdul-b85aa1346/', icon: linkedinIcon },
 ]
 
-// Menu blocks. Give `src` an image to replace the placeholder.
-// `image: false` means the block only shows its title (like "Other" in the sketch).
 const sections = [
-  { title: 'Photography', image: true, src: '', alt: 'Photography preview' },
-  { title: 'Full-Stack Programmer', image: true, src: '', alt: 'Full-stack projects preview' },
-  { title: 'Other', image: false },
+  { key: 'photography', title: 'Photography', image: true, src: '', alt: 'Photography preview' },
+  { key: 'programmer', title: 'Full-Stack Programmer', image: true, src: '', alt: 'Full-stack projects preview' },
+  { key: 'other', title: 'Other', image: false },
 ]
 
 const menuOpen = ref(false)
@@ -31,13 +28,121 @@ const toggleMenu = () => { menuOpen.value = !menuOpen.value }
 const onKeydown = (event) => {
   if (event.key === 'Escape') menuOpen.value = false
 }
-onMounted(() => window.addEventListener('keydown', onKeydown))
-onUnmounted(() => window.removeEventListener('keydown', onKeydown))
+
+const showStar = ref(false)
+const shakeOn = ref(false)
+const showStarfield = ref(false)
+
+const prefersReducedMotion =
+  typeof window !== 'undefined' && window.matchMedia
+    ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    : false
+
+const smallStarShadow = ref('')
+const twinkleStars = ref([])
+
+const generateStarfield = () => {
+  const small = []
+  for (let i = 0; i < 160; i++) {
+    const x = Math.round(Math.random() * 100)
+    const y = Math.round(Math.random() * 100)
+    small.push(`${x}vw ${y}vh #fff`)
+  }
+  smallStarShadow.value = small.join(', ')
+
+  const twinkles = []
+  for (let i = 0; i < 26; i++) {
+    twinkles.push({
+      id: i,
+      top: Math.round(Math.random() * 100),
+      left: Math.round(Math.random() * 100),
+      size: 2 + Math.round(Math.random() * 3),
+      delay: (Math.random() * 4).toFixed(2),
+      duration: (2.5 + Math.random() * 3).toFixed(2),
+    })
+  }
+  twinkleStars.value = twinkles
+}
+
+const shootVars = ref({})
+
+const computeShootVars = () => {
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const d = Math.sqrt(vw * vw + vh * vh)
+  const angleDeg = (Math.atan2(vw, vh) * 180) / Math.PI
+  shootVars.value = {
+    '--home-shoot-dx': `-${vw}px`,
+    '--home-shoot-dy': `${vh}px`,
+    '--home-trail-angle': `${angleDeg}deg`,
+    '--home-trail-len': `${d}px`,
+  }
+}
+
+let starTimer = null
+let shakeTimer = null
+let fieldTimer = null
+
+onMounted(() => {
+  window.addEventListener('keydown', onKeydown)
+  window.addEventListener('resize', computeShootVars)
+  generateStarfield()
+  computeShootVars()
+
+  if (prefersReducedMotion) {
+    showStarfield.value = true
+    return
+  }
+
+  starTimer = setTimeout(() => {
+    showStar.value = true
+
+    shakeTimer = setTimeout(() => {
+      shakeOn.value = true
+      setTimeout(() => { shakeOn.value = false }, 450)
+    }, 750)
+
+    fieldTimer = setTimeout(() => {
+      showStar.value = false
+      showStarfield.value = true
+    }, 1300)
+  }, 3000)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKeydown)
+  window.removeEventListener('resize', computeShootVars)
+  clearTimeout(starTimer)
+  clearTimeout(shakeTimer)
+  clearTimeout(fieldTimer)
+})
 </script>
 
 <template>
   <div class="home-page">
-    <main class="home-stage">
+    <div class="home-starfield" :class="{ 'home-starfield--visible': showStarfield }">
+      <div class="home-starfield-dots" :style="{ boxShadow: smallStarShadow }"></div>
+      <span
+        v-for="star in twinkleStars"
+        :key="star.id"
+        class="home-twinkle"
+        :style="{
+          top: star.top + '%',
+          left: star.left + '%',
+          width: star.size + 'px',
+          height: star.size + 'px',
+          animationDelay: star.delay + 's',
+          animationDuration: star.duration + 's',
+        }"
+      ></span>
+    </div>
+
+    <div v-if="showStar" class="home-shooting-star-layer" :style="shootVars">
+      <div class="home-star-trail"></div>
+      <div class="home-shooting-star"></div>
+    </div>
+
+    <main class="home-stage" :class="{ 'home-stage--shake': shakeOn }">
       <section class="home-intro">
         <figure class="home-pfp">
           <img v-if="pfpSrc" :src="pfpSrc" alt="Portrait of Yaghya Abdul" />
@@ -45,9 +150,9 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
         </figure>
 
         <div class="home-text">
-          <h1 class="home-name"><span>YAGHYA</span> <span>ABDUL</span></h1>
-          <h2 class="home-role"><span>Full-Stack</span> <span>Programmer</span></h2>
-          <p class="home-craft">Photographer</p>
+          <h1 class="home-name animate__animated animate__fadeInLeft animate__fast"><span>YAGHYA</span> <span>ABDUL</span></h1>
+          <h2 class="home-role animate__animated animate__fadeInLeft animate__faster"><span>Full-Stack</span> <span>Programmer</span></h2>
+          <p class="home-craft animate__animated animate__fadeInLeft animate__fast">Photographer</p>
         </div>
       </section>
 
@@ -64,8 +169,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
         </ul>
       </nav>
     </main>
-
-    <!-- The menu panel. The button lives INSIDE it, so it travels with the panel. -->
     <aside
       class="home-menu"
       :class="{ 'home-menu--open': menuOpen }"
@@ -82,14 +185,28 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
         <span class="home-peek-icon" aria-hidden="true">&#9650;</span>
       </button>
 
-      <!-- inert while closed, so keyboard focus can't land on hidden content -->
       <div id="home-menu-body" class="home-menu-body" :inert="menuOpen ? null : ''">
-        <section v-for="section in sections" :key="section.title" class="home-block">
+        <section
+          v-for="section in sections"
+          :key="section.title"
+          class="home-block"
+          :class="'home-block--' + section.key"
+        >
           <h3 class="home-block-title">{{ section.title }}</h3>
 
           <div v-if="section.image" class="home-block-image">
             <img v-if="section.src" :src="section.src" :alt="section.alt" />
             <span v-else>Image</span>
+
+            <div v-if="section.key === 'photography'" class="home-aperture">
+              <span class="home-aperture-blades"></span>
+              <span class="home-aperture-ring"></span>
+            </div>
+
+            <div v-if="section.key === 'programmer'" class="home-code-anim">
+              <span class="home-code-line" v-for="n in 4" :key="n"></span>
+              <span class="home-code-cursor"></span>
+            </div>
           </div>
         </section>
       </div>
@@ -98,14 +215,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 </template>
 
 <style scoped>
-/* ==========================================================
-   HOME PAGE — every class is prefixed "home-".
-   The root is fixed to the viewport, so the page never scrolls
-   and nothing leaks to <html> or <body>.
-   ========================================================== */
-
-/* Registered so the button border can rotate and the arrow can turn smoothly.
-   Browsers without @property still work; they just skip the smooth part. */
 @property --home-angle {
   syntax: "<angle>";
   inherits: false;
@@ -121,17 +230,17 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 .home-page {
   --home-bg: #000000;
   --home-surface: #050505;
-  --home-gold: #f0e68c;                       /* headings, name, text */
-  --home-peach: #fad9c8;                      /* logo-style accent */
-  --home-line: rgba(240, 230, 140, 0.28);     /* faint gold borders */
+  --home-gold: #f0e68c;                  
+  --home-peach: #fad9c8;                   
+  --home-line: rgba(240, 230, 140, 0.28);     
   --home-line-strong: rgba(240, 230, 140, 0.6);
   --home-border-w: 2px;
-  --home-ease: cubic-bezier(0.22, 1, 0.36, 1); /* fast start, soft landing */
+  --home-ease: cubic-bezier(0.22, 1, 0.36, 1); 
   --home-font: "Times New Roman", Times, "Liberation Serif", serif;
 
   position: fixed;
   inset: 0;
-  overflow: hidden;              /* no scrolling */
+  overflow: hidden;            
   overscroll-behavior: none;
   background: var(--home-bg);
   color: var(--home-gold);
@@ -144,9 +253,106 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   box-sizing: border-box;
 }
 
-/* ---------- Layout: intro sits in the middle of the screen ---------- */
+.home-starfield {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  opacity: 0;
+  transition: opacity 2.4s ease;
+  pointer-events: none;
+}
+
+.home-starfield--visible { opacity: 1; }
+
+.home-starfield-dots {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.home-twinkle {
+  position: absolute;
+  border-radius: 50%;
+  background: #fff;
+  animation: home-twinkle ease-in-out infinite;
+}
+
+@keyframes home-twinkle {
+  0%, 100% { opacity: 0.15; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.3); }
+}
+
+.home-shooting-star-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.home-shooting-star {
+  position: absolute;
+  top: 6%;
+  right: 4%;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #ffffff 0%, var(--home-gold) 45%, transparent 75%);
+  box-shadow:
+    0 0 20px 6px var(--home-gold),
+    0 0 44px 14px rgba(240, 230, 140, 0.55),
+    0 0 80px 26px rgba(250, 217, 200, 0.3);
+  animation: home-shoot 1.15s cubic-bezier(0.5, 0, 0.85, 0.4) forwards;
+}
+
+@keyframes home-shoot {
+  0% { transform: translate(0, 0) scale(0.3); opacity: 0; }
+  8% { opacity: 1; }
+  100% {
+    transform: translate(var(--home-shoot-dx, -125vw), var(--home-shoot-dy, 130vh)) scale(1.1);
+    opacity: 0;
+  }
+}
+
+.home-star-trail {
+  position: absolute;
+  top: 6%;
+  right: 4%;
+  width: 4px;
+  height: var(--home-trail-len, 170vmax);
+  transform-origin: top center;
+  transform: rotate(var(--home-trail-angle, 60deg)) scaleY(0);
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.9),
+    var(--home-gold) 12%,
+    rgba(240, 230, 140, 0.35) 30%,
+    transparent 55%
+  );
+  filter: blur(0.5px);
+  animation:
+    home-trail-grow 1.15s cubic-bezier(0.5, 0, 0.85, 0.4) forwards,
+    home-trail-fade 2.2s ease-in 1s forwards;
+}
+
+@keyframes home-trail-grow {
+  0% { transform: rotate(var(--home-trail-angle, 60deg)) scaleY(0); opacity: 0; }
+  10% { opacity: 0.9; }
+  100% { transform: rotate(var(--home-trail-angle, 60deg)) scaleY(1); opacity: 0.9; }
+}
+
+@keyframes home-trail-fade {
+  0% { opacity: 0.9; }
+  100% { opacity: 0; }
+}
+
 .home-stage {
   position: relative;
+  z-index: 2;
   height: 100%;
   width: 100%;
   display: flex;
@@ -159,6 +365,21 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
     max(5vmin, env(safe-area-inset-left));
 }
 
+.home-stage--shake { animation: home-shake 0.45s cubic-bezier(.36,.07,.19,.97) both; }
+
+@keyframes home-shake {
+  0%, 100% { transform: translate(0, 0); }
+  10% { transform: translate(-8px, 5px); }
+  20% { transform: translate(7px, -5px); }
+  30% { transform: translate(-6px, 6px); }
+  40% { transform: translate(6px, -6px); }
+  50% { transform: translate(-5px, 4px); }
+  60% { transform: translate(5px, -4px); }
+  70% { transform: translate(-4px, 3px); }
+  80% { transform: translate(4px, -3px); }
+  90% { transform: translate(-2px, 2px); }
+}
+
 .home-intro {
   display: grid;
   grid-template-columns: auto auto;
@@ -167,7 +388,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   margin: 0;
 }
 
-/* ---------- PFP ---------- */
 .home-pfp {
   position: relative;
   margin: 0;
@@ -192,7 +412,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   border-radius: inherit;
 }
 
-/* Viewfinder corners */
 .home-pfp::after {
   --c: var(--home-peach);
   content: "";
@@ -210,8 +429,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
     linear-gradient(var(--c), var(--c)) bottom right / var(--home-border-w) 28px;
   background-repeat: no-repeat;
 }
-
-/* ---------- Text ---------- */
 .home-text { text-align: left; }
 
 .home-name {
@@ -246,7 +463,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   color: var(--home-peach);
 }
 
-/* ---------- Socials (bottom right) ---------- */
 .home-socials {
   position: absolute;
   right: max(5vmin, env(safe-area-inset-right));
@@ -299,11 +515,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   transform: translateY(-2px);
 }
 
-/* ==========================================================
-   MENU PANEL
-   Desktop: slides up from the bottom.
-   Mobile:  slides in from the right (see the media query below).
-   ========================================================== */
 .home-menu {
   position: absolute;
   left: 0;
@@ -313,7 +524,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   z-index: 5;
   background: var(--home-bg);
   border-top: var(--home-border-w) solid var(--home-line);
-  transform: translateY(100%);            /* hidden below the screen */
+  transform: translateY(100%);      
   transition: transform 0.45s var(--home-ease);
   will-change: transform;
 }
@@ -332,7 +543,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
     max(2.5vw, env(safe-area-inset-left));
 }
 
-/* A block: title on top, image box inside it */
 .home-block {
   display: flex;
   flex-direction: column;
@@ -346,7 +556,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 .home-block-title {
   margin: 0;
-  min-height: 2.4em;                 /* keeps the image boxes lined up */
+  min-height: 2.4em;               
   display: grid;
   place-items: center;
   text-align: center;
@@ -381,16 +591,118 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   object-fit: cover;
 }
 
-/* ==========================================================
-   BUTTON: rides on the panel's edge, so it moves with it.
-   Orbiting light, pulse ring, bobbing arrow.
-   ========================================================== */
+.home-aperture {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.home-aperture-blades {
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  background: repeating-conic-gradient(
+    from 0deg,
+    rgba(240, 230, 140, 0.95) 0deg 10deg,
+    rgba(5, 5, 5, 0.92) 10deg 60deg
+  );
+  clip-path: circle(55% at 50% 50%);
+  opacity: 0;
+}
+
+.home-aperture-ring {
+  position: absolute;
+  inset: 6%;
+  border-radius: 50%;
+  border: 2px solid var(--home-line-strong);
+  opacity: 0;
+}
+
+.home-block--photography:hover .home-aperture-blades {
+  opacity: 1;
+  animation: home-aperture-cycle 1.1s ease-in-out;
+}
+
+.home-block--photography:hover .home-aperture-ring {
+  opacity: 1;
+  animation: home-aperture-ring-pulse 1.1s ease-in-out;
+}
+
+@keyframes home-aperture-cycle {
+  0% { clip-path: circle(55% at 50% 50%); }
+  45% { clip-path: circle(6% at 50% 50%); }
+  100% { clip-path: circle(55% at 50% 50%); }
+}
+
+@keyframes home-aperture-ring-pulse {
+  0%, 100% { transform: scale(1); }
+  45% { transform: scale(0.85); }
+}
+
+.home-code-anim {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0 14%;
+  pointer-events: none;
+}
+
+.home-code-line {
+  display: block;
+  height: 6px;
+  width: 0;
+  border-radius: 3px;
+  background: var(--home-gold);
+  opacity: 0.9;
+}
+
+.home-code-line:nth-child(2) { background: var(--home-peach); }
+.home-code-line:nth-child(3) { background: var(--home-gold); }
+.home-code-line:nth-child(4) { background: var(--home-peach); }
+
+.home-code-cursor {
+  display: none;
+  width: 8px;
+  height: 16px;
+  background: var(--home-gold);
+}
+
+.home-block--programmer:hover .home-code-line {
+  animation: home-code-type 0.5s steps(10) forwards;
+}
+
+.home-block--programmer:hover .home-code-line:nth-child(1) { animation-delay: 0s; width: 70%; }
+.home-block--programmer:hover .home-code-line:nth-child(2) { animation-delay: 0.15s; width: 45%; }
+.home-block--programmer:hover .home-code-line:nth-child(3) { animation-delay: 0.3s; width: 60%; }
+.home-block--programmer:hover .home-code-line:nth-child(4) { animation-delay: 0.45s; width: 30%; }
+
+.home-block--programmer:hover .home-code-cursor {
+  display: block;
+  animation: home-code-blink 0.8s steps(1) infinite;
+  animation-delay: 0.6s;
+}
+
+@keyframes home-code-type {
+  from { width: 0; }
+}
+
+@keyframes home-code-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
 .home-peek {
   --home-angle: 0deg;
 
   position: absolute;
   left: 50%;
-  bottom: 100%;                      /* sits on top of the panel */
+  bottom: 100%;                   
   transform: translateX(-50%);
   width: clamp(84px, 11vw, 124px);
   height: clamp(42px, 5.5vw, 62px);
@@ -403,7 +715,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   border: var(--home-border-w) solid transparent;
   border-bottom: 0;
   border-radius: 999px 999px 0 0;
-  /* solid fill inside, a rotating gold/peach light around the border */
   background:
     linear-gradient(var(--home-bg), var(--home-bg)) padding-box,
     conic-gradient(
@@ -418,7 +729,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   transition: height 0.25s ease, color 0.2s ease, box-shadow 0.25s ease;
 }
 
-/* Ring that pulses outward from the button */
 .home-peek::after {
   content: "";
   position: absolute;
@@ -446,7 +756,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   outline-offset: 4px;
 }
 
-/* The arrow: points up when closed, down when open (turns smoothly) */
 .home-peek-icon {
   --home-rot: 0deg;
   display: block;
@@ -469,7 +778,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   100% { transform: scale(1.5); opacity: 0; }
 }
 
-/* Bobs along the direction the arrow points, whatever its rotation */
 @keyframes home-bob {
   0%, 100% { transform: rotate(var(--home-rot)) translateY(1px); }
   50%      { transform: rotate(var(--home-rot)) translateY(-5px); }
@@ -478,16 +786,26 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 @media (prefers-reduced-motion: reduce) {
   .home-peek,
   .home-peek::after,
-  .home-peek-icon { animation: none; }
+  .home-peek-icon,
+  .home-shooting-star,
+  .home-star-trail,
+  .home-stage--shake,
+  .home-twinkle,
+  .home-block--photography:hover .home-aperture-blades,
+  .home-block--photography:hover .home-aperture-ring,
+  .home-block--programmer:hover .home-code-line,
+  .home-block--programmer:hover .home-code-cursor { animation: none; }
 
   .home-menu,
   .home-peek,
   .home-peek-icon,
   .home-socials a,
-  .home-social-icon { transition: none; }
+  .home-social-icon,
+  .home-starfield { transition: none; }
+
+  .home-starfield { opacity: 1; }
 }
 
-/* ---------- Icons only on small / short screens ---------- */
 @media (max-width: 640px), (max-height: 420px) {
   .home-socials { min-width: 0; padding: 0.8rem 1.2rem; }
 
@@ -509,15 +827,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   }
 }
 
-/* ==========================================================
-   MOBILE (portrait): the menu slides in from the right
-   ========================================================== */
 @media (max-width: 640px) {
   .home-stage {
     flex-direction: column;
     align-items: flex-start;
-    justify-content: center;         /* intro sits in the middle */
-    /* leaves room for the side tab on the right */
+    justify-content: center;       
     padding-right: calc(env(safe-area-inset-right) + 3.4rem);
   }
 
@@ -536,7 +850,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
     border-radius: 28px;
   }
 
-  /* Titles sit in a box, aligned left */
   .home-text {
     width: 100%;
     padding: 1rem 1.2rem;
@@ -545,13 +858,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
     border-radius: 14px;
   }
 
-  /* Socials stay pinned to the bottom, clear of the side tab */
   .home-socials {
     left: max(5vmin, env(safe-area-inset-left));
     right: calc(env(safe-area-inset-right) + 3.4rem);
   }
 
-  /* Panel: full height, slides in from the right, leaves room for the tab */
   .home-menu {
     left: auto;
     right: 0;
@@ -566,7 +877,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
   .home-menu--open { transform: translateX(0); }
 
-  /* Blocks stack, and share the height equally so nothing scrolls */
   .home-menu-body {
     display: flex;
     flex-direction: column;
@@ -589,7 +899,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
     font-size: 1.15rem;
   }
 
-  /* Button becomes a half-circle tab on the panel's left edge, pointing left */
   .home-peek {
     left: auto;
     right: 100%;
@@ -618,12 +927,10 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
   .home-peek:active { transform: translateY(-50%) translateX(2px); }
 
-  /* Points left to pull the menu out, right to push it back */
   .home-peek-icon { --home-rot: -90deg; }
   .home-menu--open .home-peek-icon { --home-rot: 90deg; }
 }
 
-/* ---------- Very short landscape screens ---------- */
 @media (max-height: 420px) {
   .home-pfp { height: 56dvh; }
 }
