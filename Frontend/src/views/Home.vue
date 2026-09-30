@@ -6,22 +6,20 @@
       role="button"
       tabindex="0"
       aria-label="Enter the throne room"
-      @click="enter"
-      @keydown.enter.prevent="enter"
-      @keydown.space.prevent="enter"
+      @click="onSceneClick"
+      @keydown.enter.prevent="onSceneClick"
+      @keydown.space.prevent="onSceneClick"
     ></div>
 
     <p v-if="failed" class="msg">The throne room couldn't load. Refresh the page to try again.</p>
     <p v-else-if="loading" class="msg">Loading...</p>
     <p v-else-if="!flying && !arrived" class="msg pulse">Click anywhere to enter</p>
 
-    <!-- Initial Info -->
-    <div class="info" :class="{ show: arrived && viewMode === 'center' }">
+    <div class="info" :class="{ show: arrived && !brokenLeft && !brokenRight }">
       <h1>{{ NAME }}</h1>
       <p>{{ TITLE }}</p>
     </div>
 
-    <!-- Navigation Arrows -->
     <div class="nav-arrows" :class="{ show: arrived }">
       <button class="arrow-btn left" @click.stop="setView('left')" :class="{ active: viewMode === 'left' }">
         <span>‹</span>
@@ -31,25 +29,6 @@
         <small>Contact</small>
         <span>›</span>
       </button>
-    </div>
-
-    <!-- Side Panels -->
-    <div class="side-panel left" :class="{ show: viewMode === 'left' }">
-      <h2>Skills & Stack</h2>
-      <ul>
-        <li>Vue 3 / Nuxt</li>
-        <li>Three.js / WebGL</li>
-        <li>TypeScript</li>
-        <li>Node.js / Bun</li>
-        <li>UI/UX Design</li>
-      </ul>
-    </div>
-
-    <div class="side-panel right" :class="{ show: viewMode === 'right' }">
-      <h2>Get in Touch</h2>
-      <p>hello@example.com</p>
-      <p>github.com/yaghya</p>
-      <p>linkedin.com/in/yaghya</p>
     </div>
   </div>
 </template>
@@ -66,12 +45,11 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js'
 
-// ---------- Content ----------
 const NAME = 'Yaghya Abdul'
 const TITLE = 'Software Developer'
 
-// ---------- Tunables ----------
 const FLIGHT_SECONDS = 5
 const STOP_FRACTION = 0.70 
 const ENV_INTENSITY = 0.35 
@@ -86,7 +64,7 @@ const DRIFT_SPEED = 2.5
 const SUN_COLOR = 0xcfe0ff 
 const SUN_INTENSITY = 4
 const SUN_ELEVATION_DEG = 50 
-const MIN_ROUGHNESS = 0.55 
+const MIN_ROUGHNESS = 0.65 
 const SKY_INTENSITY = 3 
 
 const GODRAY_STRENGTH = 1.3
@@ -108,15 +86,15 @@ const POINTER_MARKER = 0.01
 const SIM_CURRENT = 0.1 
 const DRIP_INTERVAL = 0 
 
-// ---------- Reactive UI state ----------
 const box = ref(null)
 const loading = ref(true)
 const failed = ref(false)
 const flying = ref(false)
 const arrived = ref(false)
-const viewMode = ref('center') // 'center', 'left', or 'right'
+const viewMode = ref('center')
+const brokenLeft = ref(false)
+const brokenRight = ref(false)
 
-// ---------- Non-reactive scene state ----------
 const pointer = { x: 0, y: 0 }
 const drift = { x: 0, y: 0 }
 let pointerDirty = false
@@ -125,10 +103,10 @@ const pos = new THREE.Vector3(0, 2, 10)
 const throne = new THREE.Vector3(0, 2, -10)
 const from = new THREE.Vector3()
 const to = new THREE.Vector3()
-
-// Side view targets
 const viewLeftPos = new THREE.Vector3()
 const viewRightPos = new THREE.Vector3()
+const smoothLookAt = new THREE.Vector3()
+let waterLevel = 0
 
 let progress = 0
 
@@ -160,6 +138,29 @@ let elapsed = 0
 let disposed = false
 const flickers = [] 
 
+let leftRock = null
+let rightRock = null
+let leftRockTargetY = 0
+let rightRockTargetY = 0
+let leftRockBaseY = 0
+let rightRockBaseY = 0
+let rockHeight = 0
+
+let hoveredRock = null
+const leftPieces = []
+const rightPieces = []
+
+const drips = []
+const dripGeo = new THREE.SphereGeometry(0.18, 6, 6)
+const dripMat = new THREE.MeshStandardMaterial({ 
+  color: 0x88ccff, 
+  transparent: true, 
+  opacity: 0.9, 
+  roughness: 0.1, 
+  metalness: 0.3,
+  emissive: 0x113344
+})
+
 const sunDir = new THREE.Vector3(0, 1, 0)
 const sunPoint = new THREE.Vector3()
 const camDir = new THREE.Vector3()
@@ -169,7 +170,6 @@ const pointerVec = new THREE.Vector2()
 const prefersReducedMotion =
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
-// ---------- Water shader ----------
 const waterVertex = /* glsl */ `
   uniform mat4 textureMatrix;
   varying vec4 vReflectUv;
@@ -291,7 +291,7 @@ const waterFragment = /* glsl */ `
     float falloff = 1.0 / (1.0 + 4.0 * (gd * gd) / (uSpan * uSpan));
 
     vec3 body = mix(uDeep, uShallow, pow(1.0 - ndv, 2.0) * 0.7 + 0.1);
-    body += uGlowColor * max(dot(N, L), 0.0) * falloff * 0.12;
+    body += uGlowColor * max(dot(N, L), 0.0) * falloff * 0.15;
 
     float rl = max(dot(R, L), 0.0);
     float glint = (pow(rl, 120.0) * 5.0 + pow(rl, 600.0) * 8.0) * falloff;
@@ -312,7 +312,6 @@ const waterFragment = /* glsl */ `
   }
 `
 
-// ---------- God rays post-processing pass ----------
 const godRayVertex = /* glsl */ `
   varying vec2 vUv;
   void main() {
@@ -425,7 +424,6 @@ class GodRaysPass extends Pass {
   }
 }
 
-// ---------- Wave simulation ----------
 const simVertex = /* glsl */ `
   varying vec2 vUv;
   void main() {
@@ -498,7 +496,7 @@ class WaterSim {
         tState: { value: null },
         uTexel: { value: texel },
         uK: { value: 0.45 }, 
-        uDamp: { value: 0.995 }, 
+        uDamp: { value: 0.96 }, 
         uCurrent: { value: new THREE.Vector2() },
         uImpulse: { value: Array.from({ length: 4 }, () => new THREE.Vector4(0, 0, 0, 1)) },
       },
@@ -579,7 +577,6 @@ class WaterSim {
   }
 }
 
-// ---------- Sky ----------
 function makeSkyTexture(dir) {
   const W = 1024
   const H = 512
@@ -615,7 +612,105 @@ function makeSkyTexture(dir) {
   return tex
 }
 
-// ---------- Setup ----------
+function makeRockTexture(title) {
+  const c = document.createElement('canvas')
+  c.width = 512
+  c.height = 512
+  const ctx = c.getContext('2d')
+  
+  ctx.fillStyle = '#2a2a2e'
+  ctx.fillRect(0, 0, 512, 512)
+  
+  for(let i=0; i<4000; i++) {
+    const v = 25 + Math.random() * 35
+    ctx.fillStyle = `rgba(${v}, ${v}, ${v+5}, 0.2)`
+    const x = Math.random() * 512
+    const y = Math.random() * 512
+    const r = Math.random() * 15
+    ctx.beginPath()
+    ctx.arc(x, y, r, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  
+  ctx.fillStyle = 'rgba(0,0,0,0.85)'
+  ctx.font = 'bold 80px Georgia'
+  ctx.textAlign = 'center'
+  ctx.fillText(title, 256, 280)
+  
+  ctx.fillStyle = 'rgba(255,255,255,0.06)'
+  ctx.fillText(title, 256, 278)
+  
+  const tex = new THREE.CanvasTexture(c)
+  tex.anisotropy = 8
+  return tex
+}
+
+function makeRockGeometry(w, h, d) {
+  const geo = new THREE.BoxGeometry(w, h, d, 8, 16, 8)
+  const pos = geo.attributes.position
+  const v = new THREE.Vector3()
+  
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i)
+    
+    const isFrontFace = v.z > d / 2 - 0.01
+    const isBackFace = v.z < -d / 2 + 0.01
+    let displacement = 0.3
+    
+    if (isFrontFace) displacement = 0.08
+    if (isBackFace) displacement = 0.45
+    
+    const dir = v.clone().normalize()
+    const noise = (Math.sin(v.x * 3.1 + v.y * 2.7) * Math.cos(v.z * 4.2)) * 0.5 + 0.5
+    
+    v.addScaledVector(dir, noise * displacement)
+    
+    if (v.y > h / 2 - 0.2) {
+      v.y += (Math.random() - 0.5) * 0.3
+      v.x += (Math.random() - 0.5) * 0.2
+      v.z += (Math.random() - 0.5) * 0.2
+    }
+    if (v.y < -h / 2 + 0.2 && !isFrontFace && !isBackFace) {
+      v.y -= Math.random() * 0.3
+      v.x += (Math.random() - 0.5) * 0.2
+      v.z += (Math.random() - 0.5) * 0.2
+    }
+    
+    pos.setXYZ(i, v.x, v.y, v.z)
+  }
+  
+  const finalGeo = geo.toNonIndexed()
+  finalGeo.computeVertexNormals()
+  return finalGeo
+}
+
+const VignetteShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    offset: { value: 1.0 },
+    darkness: { value: 1.2 }
+  },
+  vertexShader: `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform float offset;
+    uniform float darkness;
+    varying vec2 vUv;
+    
+    void main() {
+      vec4 texel = texture2D(tDiffuse, vUv);
+      vec2 uv = (vUv - vec2(0.5)) * vec2(offset);
+      gl_FragColor = vec4(mix(texel.rgb, vec3(1.0 - darkness), dot(uv, uv)), texel.a);
+    }
+  `
+}
+
 function setup() {
   scene = new THREE.Scene()
   scene.background = new THREE.Color(0x05060a)
@@ -633,9 +728,16 @@ function setup() {
 
   composer = new EffectComposer(renderer)
   composer.addPass(new RenderPass(scene, camera))
+  
   godRays = new GodRaysPass(scene, camera)
   composer.addPass(godRays)
-  composer.addPass(new UnrealBloomPass(new THREE.Vector2(1, 1), 0.25, 0.5, 0.95))
+  composer.addPass(new UnrealBloomPass(new THREE.Vector2(1, 1), 0.25, 0.6, 0.8))
+  
+  const vignettePass = new ShaderPass(VignetteShader)
+  vignettePass.uniforms.offset.value = 1.1
+  vignettePass.uniforms.darkness.value = 1.2
+  composer.addPass(vignettePass)
+
   composer.addPass(new OutputPass())
 
   scene.environmentIntensity = ENV_INTENSITY
@@ -702,7 +804,6 @@ function onModelLoaded(gltf) {
   }
 
   pos.y = Math.max(pos.y - CAMERA_DROP, bounds.min.y + 0.3)
-
   to.lerpVectors(pos, throne, STOP_FRACTION)
   to.y = pos.y
 
@@ -714,15 +815,15 @@ function onModelLoaded(gltf) {
   pos.addScaledVector(side, span * CAMERA_SHIFT_RIGHT)
   to.addScaledVector(side, span * CAMERA_SHIFT_RIGHT)
 
-  // Calculate side view positions (slightly back and to the side)
-  viewLeftPos.copy(to).lerp(pos, 0.4).addScaledVector(side, -span * 0.2)
-  viewRightPos.copy(to).lerp(pos, 0.4).addScaledVector(side, span * 0.2)
+  const camOffset = span * 0.1
+  viewLeftPos.copy(to).addScaledVector(dir, -camOffset)
+  viewRightPos.copy(to).addScaledVector(dir, -camOffset)
 
-  const glow = new THREE.PointLight(0xffd9a0, 40 * unit, 0, 2)
+  const glow = new THREE.PointLight(0xffd9a0, 55 * unit, 0, 2)
   glow.position.set(throne.x, throne.y + 3, throne.z + 1)
   glow.castShadow = true
   glow.shadow.mapSize.set(1024, 1024)
-  glow.shadow.bias = -0.0005
+  glow.shadow.bias = -0.0001
   glow.shadow.normalBias = 0.05
   glow.shadow.camera.far = span * 3
   scene.add(glow)
@@ -730,7 +831,7 @@ function onModelLoaded(gltf) {
 
   const mid = new THREE.Vector3().lerpVectors(pos, throne, 0.6)
   for (const s of [-1, 1]) {
-    const torch = new THREE.PointLight(0xffb870, 10 * unit, 0, 2)
+    const torch = new THREE.PointLight(0xff7030, 25 * unit, 0, 2)
     torch.position.copy(mid).addScaledVector(side, s * span * 0.2)
     torch.position.y = pos.y + 1.5
     scene.add(torch)
@@ -749,7 +850,7 @@ function onModelLoaded(gltf) {
     .setY(aim.y + run * Math.tan(THREE.MathUtils.degToRad(SUN_ELEVATION_DEG)))
   sun.castShadow = true
   sun.shadow.mapSize.set(4096, 4096)
-  sun.shadow.bias = -0.0005
+  sun.shadow.bias = -0.0001
   sun.shadow.normalBias = 0.03
   const half = maxDim * 0.6
   Object.assign(sun.shadow.camera, { left: -half, right: half, top: half, bottom: -half, near: 0.5, far: maxDim * 3 })
@@ -757,7 +858,7 @@ function onModelLoaded(gltf) {
   scene.add(sun, sun.target)
   sunDir.subVectors(sun.position, sun.target.position).normalize()
 
-  const bounce = new THREE.PointLight(0xfff0dc, 6 * unit, 0, 2)
+  const bounce = new THREE.PointLight(0x664422, 10 * unit, 0, 2)
   bounce.position.copy(aim).setY(aim.y + span * 0.15)
   scene.add(bounce)
 
@@ -769,8 +870,121 @@ function onModelLoaded(gltf) {
 
   godRays.hide = [...openings, waterSurface].filter(Boolean)
 
+  createRocks(to, side, dir, span, size, pos)
+
+  for(let i=0; i<150; i++) {
+    const m = new THREE.Mesh(dripGeo, dripMat.clone())
+    m.visible = false
+    m.castShadow = false
+    scene.add(m)
+    drips.push({ mesh: m, vy: 0, active: false })
+  }
+
+  smoothLookAt.copy(throne)
   renderer.shadowMap.needsUpdate = true
   loading.value = false
+}
+
+function createRocks(centerPos, sideVec, forwardVec, span, size, entrancePos) {
+  const rockW = Math.max(0.8, span * 0.05)
+  rockHeight = Math.max(2.0, span * 0.12)
+  const rockD = Math.max(0.25, span * 0.02)
+  
+  const leftGeo = makeRockGeometry(rockW, rockHeight, rockD)
+  const rightGeo = makeRockGeometry(rockW, rockHeight, rockD)
+  
+  const leftTex = makeRockTexture('SKILLS')
+  const rightTex = makeRockTexture('CONTACT')
+  
+  const leftMat = new THREE.MeshStandardMaterial({ 
+    map: leftTex, 
+    roughness: 0.9, 
+    metalness: 0.1, 
+    flatShading: true,
+    emissive: 0x00ffff,
+    emissiveIntensity: 0.0 
+  })
+  const rightMat = new THREE.MeshStandardMaterial({ 
+    map: rightTex, 
+    roughness: 0.9, 
+    metalness: 0.1, 
+    flatShading: true,
+    emissive: 0xff00ff,
+    emissiveIntensity: 0.0 
+  })
+  
+  leftRock = new THREE.Mesh(leftGeo, leftMat)
+  rightRock = new THREE.Mesh(rightGeo, rightMat)
+  
+  leftRock.castShadow = true
+  rightRock.castShadow = true
+  
+  const rockForward = centerPos.clone().lerp(entrancePos, 0.5)
+  const safeSide = size.x * 0.2
+  
+  leftRock.position.copy(rockForward).addScaledVector(sideVec, -safeSide)
+  leftRock.lookAt(entrancePos.x, leftRock.position.y, entrancePos.z)
+  
+  rightRock.position.copy(rockForward).addScaledVector(sideVec, safeSide)
+  rightRock.lookAt(entrancePos.x, rightRock.position.y, entrancePos.z)
+  
+  leftRockBaseY = waterLevel - rockHeight - 0.5
+  leftRockTargetY = waterLevel + 0.8
+  leftRock.position.y = leftRockBaseY
+  
+  rightRockBaseY = waterLevel - rockHeight - 0.5
+  rightRockTargetY = waterLevel + 0.8
+  rightRock.position.y = rightRockBaseY
+  
+  scene.add(leftRock, rightRock)
+}
+
+function breakRock(side) {
+  const isLeft = side === 'left'
+  const mainRock = isLeft ? leftRock : rightRock
+  const piecesArray = isLeft ? leftPieces : rightPieces
+  
+  if (isLeft) brokenLeft.value = true
+  else brokenRight.value = true
+  
+  mainRock.visible = false
+  
+  const skills = isLeft 
+    ? ['Vue 3', 'Three.js', 'TypeScript', 'Node.js']
+    : ['Email', 'GitHub', 'LinkedIn', 'Twitter']
+    
+  const basePos = mainRock.position.clone()
+  
+  skills.forEach((skill, i) => {
+    const w = 0.6
+    const h = 0.9
+    const d = 0.3
+    const geo = makeRockGeometry(w, h, d)
+    const tex = makeRockTexture(skill)
+    const mat = new THREE.MeshStandardMaterial({ 
+      map: tex, 
+      roughness: 0.9, 
+      metalness: 0.1, 
+      flatShading: true,
+      emissive: isLeft ? 0x002244 : 0x330022,
+      emissiveIntensity: 0.2
+    })
+    const piece = new THREE.Mesh(geo, mat)
+    piece.position.copy(basePos)
+    piece.castShadow = true
+    
+    const angle = (i / skills.length) * Math.PI * 2
+    piece.userData = {
+      vx: Math.cos(angle) * (2.0 + Math.random() * 2.0),
+      vy: 2.0 + Math.random() * 3.0,
+      vz: Math.sin(angle) * (2.0 + Math.random() * 2.0),
+      baseY: basePos.y,
+      phase: Math.random() * Math.PI * 2,
+      rotSpeed: (Math.random() - 0.5) * 2.0
+    }
+    scene.add(piece)
+    piecesArray.push(piece)
+  })
 }
 
 function createWater(sources, glow, span, dir) {
@@ -792,6 +1006,7 @@ function createWater(sources, glow, span, dir) {
 
   geometry.computeBoundingBox()
   const waterY = (geometry.boundingBox.min.y + geometry.boundingBox.max.y) / 2
+  waterLevel = waterY
   waterPlane.constant = -waterY
   if (pos.y <= waterY) console.warn('[water] the camera is below the water surface, so reflections will not draw')
   console.info('[water] simulation grid', waterSim.width, 'x', waterSim.height, 'water level', waterY.toFixed(2))
@@ -844,7 +1059,6 @@ function createWater(sources, glow, span, dir) {
   scene.add(waterSurface)
 }
 
-// ---------- Events ----------
 function resize() {
   if (!renderer || !composer || !camera || !box.value) return
   const w = box.value.clientWidth
@@ -867,6 +1081,28 @@ function onPointerMove(e) {
   pointerDirty = true
 }
 
+function onSceneClick() {
+  if (loading.value || failed.value) return
+  if (!arrived.value) {
+    enter()
+    return
+  }
+  if (flying.value) return
+  
+  pointerVec.set(pointer.x, pointer.y)
+  raycaster.setFromCamera(pointerVec, camera)
+  const intersects = []
+  if (!brokenLeft.value && leftRock) intersects.push(leftRock)
+  if (!brokenRight.value && rightRock) intersects.push(rightRock)
+  
+  const hits = raycaster.intersectObjects(intersects)
+  if (hits.length > 0) {
+    const hit = hits[0].object
+    if (hit === leftRock) breakRock('left')
+    else if (hit === rightRock) breakRock('right')
+  }
+}
+
 function enter() {
   if (loading.value || failed.value || flying.value || arrived.value) return
   if (prefersReducedMotion) {
@@ -883,7 +1119,6 @@ function setView(direction) {
   viewMode.value = viewMode.value === direction ? 'center' : direction
 }
 
-// ---------- Frame loop ----------
 function easeInOutQuad(t) {
   return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2
 }
@@ -900,13 +1135,66 @@ function updateFlight(delta) {
 
 function updateView(delta) {
   if (!arrived.value) return
-  let target = to
-  if (viewMode.value === 'left') target = viewLeftPos
-  else if (viewMode.value === 'right') target = viewRightPos
   
-  // Smoothly interpolate position
+  let targetPos = to
+  let targetLook = throne
+  
+  if (viewMode.value === 'left') {
+    targetPos = viewLeftPos
+    targetLook = leftRock.position
+  } else if (viewMode.value === 'right') {
+    targetPos = viewRightPos
+    targetLook = rightRock.position
+  }
+  
   const k = 1 - Math.exp(-4 * delta)
-  pos.lerp(target, k)
+  pos.lerp(targetPos, k)
+  smoothLookAt.lerp(targetLook, k)
+}
+
+function updateRocks(delta) {
+  if (!leftRock || !rightRock) return
+  
+  const lerpK = 1 - Math.exp(-3 * delta)
+  
+  if (!brokenLeft.value) {
+    const targetLY = viewMode.value === 'left' ? leftRockTargetY : leftRockBaseY
+    leftRock.position.y += (targetLY - leftRock.position.y) * lerpK
+    
+    const targetEmissive = hoveredRock === leftRock ? 1.5 : 0.0
+    leftRock.material.emissiveIntensity += (targetEmissive - leftRock.material.emissiveIntensity) * 0.1
+  }
+  
+  if (!brokenRight.value) {
+    const targetRY = viewMode.value === 'right' ? rightRockTargetY : rightRockBaseY
+    rightRock.position.y += (targetRY - rightRock.position.y) * lerpK
+    
+    const targetEmissive = hoveredRock === rightRock ? 1.5 : 0.0
+    rightRock.material.emissiveIntensity += (targetEmissive - rightRock.material.emissiveIntensity) * 0.1
+  }
+  
+  const updatePieces = (pieces) => {
+    for (const p of pieces) {
+      const ud = p.userData
+      
+      ud.vx *= 0.96
+      ud.vz *= 0.96
+      ud.vy *= 0.96
+      
+      p.position.x += ud.vx * delta
+      p.position.z += ud.vz * delta
+      
+      const targetY = ud.baseY + Math.sin(elapsed * 1.5 + ud.phase) * 0.5
+      ud.vy += (targetY - p.position.y) * 0.1
+      p.position.y += ud.vy * delta
+      
+      p.rotation.x += ud.rotSpeed * delta
+      p.rotation.y += ud.rotSpeed * 0.5 * delta
+    }
+  }
+  
+  updatePieces(leftPieces)
+  updatePieces(rightPieces)
 }
 
 function updateRipples() {
@@ -966,6 +1254,28 @@ function updateGodRays() {
   godRays.strength = loading.value ? 0 : GODRAY_STRENGTH * THREE.MathUtils.smoothstep(facing, -0.05, 0.5)
 }
 
+function updateHover() {
+  if (!arrived.value || flying.value) {
+    hoveredRock = null
+    return
+  }
+  
+  pointerVec.set(pointer.x, pointer.y)
+  raycaster.setFromCamera(pointerVec, camera)
+  const intersects = []
+  if (!brokenLeft.value && leftRock) intersects.push(leftRock)
+  if (!brokenRight.value && rightRock) intersects.push(rightRock)
+  
+  const hits = raycaster.intersectObjects(intersects)
+  if (hits.length > 0) {
+    hoveredRock = hits[0].object
+    if (box.value) box.value.style.cursor = 'pointer'
+  } else {
+    hoveredRock = null
+    if (box.value) box.value.style.cursor = 'auto'
+  }
+}
+
 function animate(nowMs) {
   frameId = requestAnimationFrame(animate)
 
@@ -974,14 +1284,16 @@ function animate(nowMs) {
   elapsed += delta
 
   updateFlight(delta)
-  updateView(delta) // Handle side-view camera movement
+  updateView(delta)
+  updateHover()
+  updateRocks(delta)
 
   const k = 1 - Math.exp(-DRIFT_SPEED * delta)
   drift.x += (pointer.x - drift.x) * k
   drift.y += (pointer.y - drift.y) * k
 
   camera.position.copy(pos)
-  camera.lookAt(throne)
+  camera.lookAt(smoothLookAt)
   camera.translateX(drift.x * 0.7)
   camera.translateY(drift.y * 0.35)
   camera.updateMatrixWorld()
@@ -1017,7 +1329,6 @@ function animate(nowMs) {
   composer.render()
 }
 
-// ---------- Cleanup ----------
 function disposeObject(root) {
   root.traverse((obj) => {
     if (!obj.isMesh) return
@@ -1031,7 +1342,6 @@ function disposeObject(root) {
   })
 }
 
-// ---------- Lifecycle ----------
 onMounted(() => {
   setup()
   window.addEventListener('pointermove', onPointerMove)
@@ -1134,7 +1444,6 @@ onBeforeUnmount(() => {
   font-size: clamp(1.2rem, 2.6vw, 1.8rem);
 }
 
-/* Navigation Arrows */
 .nav-arrows {
   position: absolute;
   top: 50%;
@@ -1188,65 +1497,14 @@ onBeforeUnmount(() => {
 }
 
 .arrow-btn.active {
-  background: rgba(232, 226, 212, 0.15);
-  border-color: #e8e2d4;
-}
-
-/* Side Panels */
-.side-panel {
-  position: absolute;
-  top: 50%;
-  width: 300px;
-  padding: 2rem;
-  background: rgba(10, 12, 18, 0.75);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(232, 226, 212, 0.2);
-  opacity: 0;
-  pointer-events: none;
-  transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
-  z-index: 5;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-}
-
-.side-panel.left {
-  left: 6rem;
-  transform: translateY(-50%) translateX(-30px);
-}
-
-.side-panel.right {
-  right: 6rem;
-  transform: translateY(-50%) translateX(30px);
-}
-
-.side-panel.show {
-  opacity: 1;
-  transform: translateY(-50%) translateX(0);
-  pointer-events: auto;
-}
-
-.side-panel h2 {
-  margin: 0 0 1.5rem 0;
-  font-size: 1.8rem;
-  border-bottom: 1px solid rgba(232, 226, 212, 0.3);
-  padding-bottom: 0.5rem;
-  font-weight: 600;
-}
-
-.side-panel ul {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.side-panel li, .side-panel p {
-  margin: 0.6rem 0;
-  font-size: 1.1rem;
-  color: #cfc8b9;
+  background: rgba(255, 217, 160, 0.15);
+  border-color: #ffd9a0;
+  color: #ffd9a0;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .pulse { animation: none; }
   .info { transition: none; }
-  .nav-arrows, .side-panel { transition: none; }
+  .nav-arrows { transition: none; }
 }
 </style>
